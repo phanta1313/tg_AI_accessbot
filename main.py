@@ -11,7 +11,8 @@ from aiogram import types
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ChatInviteLink
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select, insert
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from db import Base, User
 from datetime import date, timedelta
 
@@ -112,9 +113,8 @@ async def show_user_info(message: Message) -> None:
 async def sub_payment_test(message: Message):
     username = message.from_user.username
     expire_date = date.today() + timedelta(days=40)
-    is_payment_successfull = True # test
-
-    ##TODO - payment 
+    
+    is_payment_successfull = True ##TODO: actual payment
 
     if not is_payment_successfull:
         await message.reply(f"Ошибка оплаты.")
@@ -123,6 +123,9 @@ async def sub_payment_test(message: Message):
             query = insert(User).values(
                 tg_username=username,
                 sub_expire_date=expire_date
+            ).on_conflict_do_update(
+                index_elements=["tg_username"],  
+                set_={"sub_expire_date": expire_date}
             )
 
             try:
