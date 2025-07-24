@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Date
+from sqlalchemy import Column, String, Date, Integer
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
@@ -18,7 +18,7 @@ class User(Base):
         default=uuid.uuid4
     )
     
-    tg_username = Column(String(32), unique=True, index=True)
+    user_id = Column(Integer(), unique=True, index=True, nullable=False)
     sub_expire_date = Column(Date())
 
 
