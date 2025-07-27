@@ -1,7 +1,3 @@
-# TODO:
-    Member deletion after subscription expired
-    Notifications when sub date expiring in 1-2 days
-
 # Description:
     A sales bot, that provides a user with link to a private group
     after successfull subscription payment, manages expired members, 
