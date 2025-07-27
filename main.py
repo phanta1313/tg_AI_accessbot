@@ -1,19 +1,23 @@
 import asyncio
 import logging
+from datetime import date, timedelta
 from os import getenv
-from dotenv import load_dotenv
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ChatInviteLink, LabeledPrice, PreCheckoutQuery, ContentType
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ChatInviteLink, LabeledPrice, PreCheckoutQuery, \
+    ContentType
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from colorama import Fore, Style
+from dotenv import load_dotenv
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+
 from db import Base, User
-from datetime import date, timedelta
-from colorama import Fore, Back, Style, init
 
 
 
@@ -39,7 +43,9 @@ engine = create_async_engine(DATABASE_URL, echo=True)
 async_session = sessionmaker(bind=engine, expire_on_commit=False, class_=AsyncSession)
 
 
-
+#####################
+## BOT INTERACTION ##
+#####################
 @dp.message(Command(commands=["start", "help"]))
 async def show_commands(message: Message):
     commands_kb = ReplyKeyboardMarkup(
@@ -84,7 +90,6 @@ async def show_user_info(message: Message) -> None:
     async with async_session() as session:
         result = await session.execute(select(User).where(User.user_id == user_id))
         user = result.scalars().first()
-        first_name = message.from_user.first_name
 
     if user and user.sub_expire_date and user.sub_expire_date > date.today():
         await bot.send_message(
@@ -118,7 +123,6 @@ async def show_user_info(message: Message) -> None:
 @dp.message(F.content_type == ContentType.SUCCESSFUL_PAYMENT)
 async def successful_payment(message: Message):
     user_id = message.from_user.id
-    chat_id = message.chat.id
     first_name = message.from_user.first_name
 
     async with async_session() as session:
@@ -129,7 +133,7 @@ async def successful_payment(message: Message):
         if user:
             if user.sub_expire_date >= date.today():
                 expire_date = user.sub_expire_date + timedelta(days=40)
-                query = update(User).where(User.user_id == user_id).values(sub_expire_date=expire_date)
+                query = update(User).where(User.user_id == user_id).values(sub_expire_date=expire_date, first_name=first_name)
 
                 text = (
                         f"✅ Подписка продлена до {expire_date}!\n"
@@ -137,7 +141,7 @@ async def successful_payment(message: Message):
                     )
             else:
                 expire_date = date.today() + timedelta(days=30)
-                query = update(User).values(sub_expire_date=expire_date)
+                query = update(User).values(sub_expire_date=expire_date, first_name=first_name)
 
                 text = (
                     f"✅ Подписка офрмлена до {expire_date}!\n"
@@ -145,7 +149,7 @@ async def successful_payment(message: Message):
                 )
         else:
             expire_date = date.today() + timedelta(days=30)
-            query = insert(User).values(user_id=user_id,sub_expire_date=expire_date)
+            query = insert(User).values(user_id=user_id,sub_expire_date=expire_date, first_name=first_name)
 
             text = (
                 f"✅ Подписка офрмлена до {expire_date}!\n"
@@ -160,10 +164,11 @@ async def successful_payment(message: Message):
                 invite_link: ChatInviteLink = await bot.create_chat_invite_link(
                                 chat_id=GROUP_ID,
                                 member_limit=1,
+                                expire_date=timedelta(days=30),
                                 creates_join_request=False,
                                 name=f"Для @{message.from_user.first_name}"
                 )
-                await message.reply(f"Ваша персональная ссылка:\n{invite_link.invite_link}")
+                await message.reply(f"Ваша персональная ссылка (действует пока активна подписка):\n{invite_link.invite_link}")
             except Exception as e:
                     await message.reply(f"Ошибка при создании ссылки: {e}")
 
@@ -198,7 +203,49 @@ async def sub_payment_test(message: Message):
     )
 
 
+################
+## CRON JOBS ##
+################
+async def notify_expired_members() -> None:
+    async with async_session() as session:
+        query = await session.execute(select(User).where(User.sub_expire_date > date.today()))
+        users = query.scalars().all()
 
+        for user in users:
+            expire_days = user.sub_expire_date - date.today()
+
+            if expire_days.days == 5:
+                text_message = (f"Здравствуйте, {user.first_name} 👋\n"
+                                "До окончания вашей подписки осталось 5 дней. ⏱️\n"
+                                "Желаете продлить?\n"
+                                "/payment")
+                await bot.send_message(user.user_id, text_message)
+
+            if expire_days.days == 1:
+                text_message = (f"Здравствуйте, {user.first_name} 👋\n"
+                                "Ваша подписка заканчивается уже завтра. ❗\n"
+                                "Желаете продлить?\n"
+                                "/payment")
+                await bot.send_message(user.user_id, text_message)
+
+
+
+async def delete_expired_members() -> None:
+    async with async_session() as session:
+        query = await session.execute(select(User).where(User.sub_expire_date < date.today()))
+        users = query.scalars().all()
+
+        for user in users:
+            member = await bot.get_chat_member(chat_id=GROUP_ID, user_id=user.user_id)
+            if not member.status == "creator":
+                await bot.ban_chat_member(chat_id=GROUP_ID, user_id=user.user_id)
+                await bot.send_message(user.user_id, f"Вы были исключены из {GROUP_NAME}.", parse_mode="Markdown")
+
+
+
+#####################
+## INITTIALIZATION ##
+#####################
 async def init_models():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -206,6 +253,16 @@ async def init_models():
 
 async def main() -> None:
     await init_models()
+
+    await notify_expired_members()
+    await delete_expired_members()
+
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(delete_expired_members, "cron", hour=0, minute=0, timezone="Europe/Moscow")
+    scheduler.add_job(notify_expired_members, "cron", hour=0, minute=0, timezone="Europe/Moscow")
+
+    scheduler.start()
+
     await dp.start_polling(bot)
 
 

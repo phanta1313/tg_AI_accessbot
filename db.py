@@ -17,7 +17,7 @@ class User(Base):
         primary_key=True,
         default=uuid.uuid4
     )
-    
+    first_name = Column(String())
     user_id = Column(Integer(), unique=True, index=True, nullable=False)
     sub_expire_date = Column(Date())
 
