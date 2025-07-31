@@ -1,0 +1,20 @@
+services:
+  tg_access_bot_app:
+    build: .
+    env_file: .env
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    env_file: .env
+
+volumes:
+  postgres_data:

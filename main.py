@@ -1,5 +1,4 @@
-import asyncio
-import logging
+import asyncio, logging, aiohttp
 from datetime import date, timedelta
 from os import getenv
 
@@ -43,10 +42,47 @@ engine = create_async_engine(DATABASE_URL, echo=True)
 async_session = sessionmaker(bind=engine, expire_on_commit=False, class_=AsyncSession)
 
 
+
+######################
+## AI CONFIGURATION ##
+######################
+model = "accessbot_model"
+
+async def ai_prompt(prompt: str):
+    url = "http://localhost:11434/api/chat"
+    payload = {
+        "model": "accessbot_model",  
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "stream": False
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload) as response:
+            data = await response.json()
+            return data.get("message", {}).get("content", "")
+
+
+
 #####################
 ## BOT INTERACTION ##
 #####################
-@dp.message(Command(commands=["start", "help"]))
+@dp.message(Command(commands=["start"]))
+async def on_start(message: Message):
+    thinking_msg = await message.answer("🤔 ИИ думает...")
+    ai_response = await ai_prompt("Привет! Кто ты и для чего ты здесь?")
+    return await thinking_msg.edit_text(ai_response)
+
+
+@dp.message(F.text & ~F.text.startswith('/'))
+async def on_message(message: Message):
+    thinking_msg = await message.answer("🤔 ИИ думает...")
+    ai_response = await ai_prompt(message.text)
+    return await thinking_msg.edit_text(ai_response)
+
+
+@dp.message(Command(commands=["help"]))
 async def show_commands(message: Message):
     commands_kb = ReplyKeyboardMarkup(
         keyboard=[
