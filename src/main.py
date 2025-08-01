@@ -74,7 +74,7 @@ async def ai_prompt(dataset: list[dict]):
 #####################
 @dp.message(Command(commands=["start"]))
 async def on_start(message: Message):
-    thinking_msg = await message.answer("🤔 ИИ думает...\n(подождите пожалуйста ему не хватает мощности)\n\n/help")
+    thinking_msg = await message.answer("🤔 ИИ думает...\n(подождите пожалуйста ему не хватает видеокарты)\n\n/help")
     ai_response = await ai_prompt([{"role": "user", "content": f"Поприветствуй меня и предложи свою помощь"}])
     await thinking_msg.edit_text(ai_response)
 
@@ -92,7 +92,7 @@ async def on_message(message: Message):
             "content": doc["content"]
         })
 
-    thinking_msg = await message.answer("🤔 ИИ думает...\n\nhelp")
+    thinking_msg = await message.answer("🤔 ИИ думает...\n(подождите пожалуйста ему не хватает видеокарты)\n\n/help")
     ai_response = await ai_prompt(current_dataset)
     await collection.insert_one({"role": "assistant", "content": ai_response})
     await thinking_msg.edit_text(ai_response)
