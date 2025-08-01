@@ -50,7 +50,11 @@ AI_MODEL = "accessbot_model"
 ## AI PROMT CONFIGURATION ##
 ############################
 async def ai_prompt(dataset: list[dict]):
-    url = "http://localhost:11434/api/chat"
+    if getenv("LOCAL") == "1":
+    	url = "http://localhost:11434/api/chat"
+    else:
+        url = "http://ollama:11434/api/chat"
+
     payload = {
         "model": AI_MODEL,  
         "messages": dataset,

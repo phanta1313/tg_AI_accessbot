@@ -1,7 +1,7 @@
 services:
   tg_accessbot_app:
     build: .
-    env_file: .env
+    env_file: .env.docker
     depends_on:
       - postgres
       - mongodb
@@ -15,7 +15,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    env_file: .env
+    env_file: .env.docker
   
   mongodb:
     image: mongo:7
@@ -23,8 +23,23 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - mongodb_data:/var/lib/mongodb/data
+      - mongodb_data:/data/db
+    env_file: .env.docker
+  
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    depends_on:
+      - tg_accessbot_app
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./Modelfile:/Modelfile
+    entrypoint: ["/bin/sh", "-c", "ollama create accessbot_model -f /Modelfile & sleep 5 && ollama serve"]  
 
 volumes:
   postgres_data:
   mongodb_data:
+  ollama_data:
