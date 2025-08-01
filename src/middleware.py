@@ -3,6 +3,9 @@ from aiogram.types import Message
 from typing import Callable, Dict, Any, Awaitable
 import logging
 from colorama import Fore, Style
+from datetime import datetime
+
+
 
 logging.basicConfig(
         level=logging.INFO,
@@ -18,5 +21,5 @@ class LoggingMiddleware(BaseMiddleware):
         data: Dict[str, Any]
     ) -> Any:
         user = event.from_user
-        logging.info(f"Message {event.text} from - [{user.id}] {user.full_name}")
+        logging.info(f"[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] '{event.text}' from - [{user.id}] {user.full_name}")
         return await handler(event, data)
