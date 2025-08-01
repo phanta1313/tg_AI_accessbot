@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from motor.motor_asyncio import AsyncIOMotorClient
 
+from middleware import LoggingMiddleware
 from db import Base, User
 
 
@@ -26,6 +27,8 @@ load_dotenv()
 
 bot = Bot(token=getenv("BOT_TOKEN"), default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
+dp.message.middleware(LoggingMiddleware())
+
 postgres_engine = create_async_engine(getenv("POSTGRES_URL"), echo=True)
 async_ps_session = sessionmaker(bind=postgres_engine, expire_on_commit=False, class_=AsyncSession)
 mongo_client = AsyncIOMotorClient(getenv("MONGO_URL"))
