@@ -15,6 +15,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from db import Base, User
 
@@ -22,40 +23,36 @@ from db import Base, User
 
 load_dotenv()
 
-BOT_TOKEN = getenv("BOT_TOKEN")
+
+bot = Bot(token=getenv("BOT_TOKEN"), default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp = Dispatcher()
+postgres_engine = create_async_engine(getenv("POSTGRES_URL"), echo=True)
+async_ps_session = sessionmaker(bind=postgres_engine, expire_on_commit=False, class_=AsyncSession)
+mongo_client = AsyncIOMotorClient(getenv("MONGO_URL"))
+mongo_db = mongo_client[getenv("MONGO_DB")]
+
+
 GROUP_ID = getenv("GROUP_ID")
 GROUP_NAME = getenv("GROUP_NAME")
 PAYMENT_PROVIDER_TOKEN_TEST = getenv("PAYMENT_PROVIDER_TOKEN_TEST")
-POSTGRES_USER = getenv("POSTGRES_USER")
-POSTGRES_PASSWORD = getenv("POSTGRES_PASSWORD")
-POSTGRES_DB = getenv("POSTGRES_DB")
-POSTGRES_HOST = getenv("POSTGRES_HOST")
-DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}/{POSTGRES_DB}"
 
 SUB_TITLE = "Доступ к группе"
 SUB_DESCRIPTION = "Подписка на 30 дней"
 SUB_PRICE = 10000 # *0.01
-
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher()
-engine = create_async_engine(DATABASE_URL, echo=True)
-async_session = sessionmaker(bind=engine, expire_on_commit=False, class_=AsyncSession)
+AI_MODEL = "accessbot_model"
 
 
 
-######################
-## AI CONFIGURATION ##
-######################
-model = "accessbot_model"
-
-async def ai_prompt(prompt: str):
+############################
+## AI PROMT CONFIGURATION ##
+############################
+async def ai_prompt(dataset: list[dict]):
     url = "http://localhost:11434/api/chat"
     payload = {
-        "model": "accessbot_model",  
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "stream": False
+        "model": AI_MODEL,  
+        "messages": dataset,
+        "stream": False,
+        "max_new_tokens": 2048
     }
 
     async with aiohttp.ClientSession() as session:
@@ -70,16 +67,28 @@ async def ai_prompt(prompt: str):
 #####################
 @dp.message(Command(commands=["start"]))
 async def on_start(message: Message):
-    thinking_msg = await message.answer("🤔 ИИ думает...")
-    ai_response = await ai_prompt("Привет! Кто ты и для чего ты здесь?")
-    return await thinking_msg.edit_text(ai_response)
+    thinking_msg = await message.answer("🤔 ИИ думает...\n(подождите пожалуйста ему не хватает мощности)\n\n/help")
+    ai_response = await ai_prompt([{"role": "user", "content": f"Поприветствуй меня и предложи свою помощь"}])
+    await thinking_msg.edit_text(ai_response)
 
 
 @dp.message(F.text & ~F.text.startswith('/'))
 async def on_message(message: Message):
-    thinking_msg = await message.answer("🤔 ИИ думает...")
-    ai_response = await ai_prompt(message.text)
-    return await thinking_msg.edit_text(ai_response)
+    collection = mongo_db[str(message.from_user.id)]
+    await collection.insert_one({"role":"user", "content": message.text})
+
+    cursor = collection.find()
+    current_dataset = []
+    async for doc in cursor:
+        current_dataset.append({
+            "role": doc["role"],
+            "content": doc["content"]
+        })
+
+    thinking_msg = await message.answer("🤔 ИИ думает...\n\nhelp")
+    ai_response = await ai_prompt(current_dataset)
+    await collection.insert_one({"role": "assistant", "content": ai_response})
+    await thinking_msg.edit_text(ai_response)
 
 
 @dp.message(Command(commands=["help"]))
@@ -102,11 +111,12 @@ async def show_commands(message: Message):
         f"Здравствуйте, {message.from_user.first_name} 👋\n"
         "Чтобы начать, ознакомтесь со списком команд оплаты и получения справки о текущей подписке:\n\n"
         "/my_subscription — Получить справку о текущем состоянии подписки ℹ️\n"
-        f"/payment — Начать оплату и приобрести ссылку на {GROUP_NAME} 💸\n\n"
+        f"/payment — Начать оплату и приобрести ссылку на {GROUP_NAME} (пока что воспользуйтесь тестовой картой: /credit_card)💸\n\n"
         "⚠️ Важно: подписка дается на 30 дней, и перестает быть действительной в день истекания срока в 00:00\n\n"
         "Еще:\n"
         "/id — Узнать ID текущего чата или группы\n"
-        "/help — Вывести это сообщение"
+        "/help — Вывести это сообщение\n"
+        "/credit_card - получить данные тестовой карты"
     )
     await message.answer(text, reply_markup=commands_kb)
 
@@ -123,7 +133,7 @@ async def show_user_info(message: Message) -> None:
     user_id = message.from_user.id
     chat_id = message.chat.id
 
-    async with async_session() as session:
+    async with async_ps_session() as session:
         result = await session.execute(select(User).where(User.user_id == user_id))
         user = result.scalars().first()
 
@@ -161,7 +171,7 @@ async def successful_payment(message: Message):
     user_id = message.from_user.id
     first_name = message.from_user.first_name
 
-    async with async_session() as session:
+    async with async_ps_session() as session:
         user_q = select(User).where(User.user_id == user_id)
         result = await session.execute(user_q)
         user = result.scalars().first()
@@ -239,11 +249,18 @@ async def sub_payment_test(message: Message):
     )
 
 
+@dp.message(Command(commands=["credit_card"]))
+async def display_card_info(message: Message):
+    await message.answer("4548819407777774\n" \
+                        "12/26\n123")
+
+
+
 ################
 ## CRON JOBS ##
 ################
 async def notify_expired_members() -> None:
-    async with async_session() as session:
+    async with async_ps_session() as session:
         query = await session.execute(select(User).where(User.sub_expire_date > date.today()))
         users = query.scalars().all()
 
@@ -267,7 +284,7 @@ async def notify_expired_members() -> None:
 
 
 async def delete_expired_members() -> None:
-    async with async_session() as session:
+    async with async_ps_session() as session:
         query = await session.execute(select(User).where(User.sub_expire_date < date.today()))
         users = query.scalars().all()
 
@@ -278,12 +295,28 @@ async def delete_expired_members() -> None:
                 await bot.send_message(user.user_id, f"Вы были исключены из {GROUP_NAME}.", parse_mode="Markdown")
 
 
+async def trim_all_collections():
+    max_documents=10000
+    collections = await mongo_db.list_collection_names()
+    
+    for name in collections:
+        collection = mongo_db[name]
+        count = await collection.count_documents({})
+        to_delete = count - max_documents
+
+        if count > max_documents:
+            cursor = collection.find({}, sort=[("_id", 1)], limit=to_delete)
+            ids = [doc["_id"] async for doc in cursor]
+            await collection.delete_many({"_id": {"$in": ids}})
+            logging.info(f"Trimmed {to_delete} old docs from collection: {name}")
+
+
 
 #####################
 ## INITTIALIZATION ##
 #####################
 async def init_models():
-    async with engine.begin() as conn:
+    async with postgres_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
@@ -292,11 +325,12 @@ async def main() -> None:
 
     await notify_expired_members()
     await delete_expired_members()
+    await trim_all_collections()
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(delete_expired_members, "cron", hour=0, minute=0, timezone="Europe/Moscow")
     scheduler.add_job(notify_expired_members, "cron", hour=0, minute=0, timezone="Europe/Moscow")
-
+    scheduler.add_job(trim_all_collections, "cron", hour=0, minute=0, timezone="Europe/Moscow")
     scheduler.start()
 
     await dp.start_polling(bot)
