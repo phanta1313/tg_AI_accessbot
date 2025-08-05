@@ -13,13 +13,8 @@ class Base(DeclarativeBase):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(
-        UUID(as_uuid=True),  
-        primary_key=True,
-        default=uuid.uuid4
-    )
     first_name = Column(String())
-    user_id = Column(BigInteger(), unique=True, index=True, nullable=False)
+    user_id = Column(BigInteger(), unique=True, index=True, nullable=False, primary_key=True)
     sub_expire_date = Column(Date())
 
 
