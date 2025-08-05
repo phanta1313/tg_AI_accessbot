@@ -5,6 +5,8 @@ services:
     depends_on:
       - postgres
       - mongodb
+    command: alembic upgrade head 
+    command: python src/main.py
     volumes:
       - .:/app
 
