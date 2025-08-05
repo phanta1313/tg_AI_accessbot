@@ -1,10 +1,12 @@
 services:
   tg_accessbot_app:
     build: .
-    env_file: .env.docker
+    env_file: .env
     depends_on:
       - postgres
       - mongodb
+    command: alembic upgrade head 
+    command: python src/main.py
     volumes:
       - .:/app
 
@@ -15,7 +17,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    env_file: .env.docker
+    env_file: .env
   
   mongodb:
     image: mongo:7
@@ -24,7 +26,7 @@ services:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
-    env_file: .env.docker
+    env_file: .env
   
   ollama:
     image: ollama/ollama
