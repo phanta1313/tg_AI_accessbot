@@ -6,8 +6,15 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ChatInviteLink, LabeledPrice, PreCheckoutQuery, \
-    ContentType
+from aiogram.types import (
+    Message,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    ChatInviteLink,
+    LabeledPrice,
+    PreCheckoutQuery,
+    ContentType,
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from colorama import Fore, Style
 from dotenv import load_dotenv
@@ -21,16 +28,19 @@ from middleware import LoggingMiddleware
 from db import Base, User
 
 
-
 load_dotenv()
 
 
-bot = Bot(token=getenv("BOT_TOKEN"), default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+bot = Bot(
+    token=getenv("BOT_TOKEN"), default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+)
 dp = Dispatcher()
 dp.message.middleware(LoggingMiddleware())
 
 postgres_engine = create_async_engine(getenv("POSTGRES_URL"), echo=True)
-async_ps_session = sessionmaker(bind=postgres_engine, expire_on_commit=False, class_=AsyncSession)
+async_ps_session = sessionmaker(
+    bind=postgres_engine, expire_on_commit=False, class_=AsyncSession
+)
 mongo_client = AsyncIOMotorClient(getenv("MONGO_URL"))
 mongo_db = mongo_client[getenv("MONGO_DB")]
 
@@ -41,9 +51,8 @@ PAYMENT_PROVIDER_TOKEN_TEST = getenv("PAYMENT_PROVIDER_TOKEN_TEST")
 
 SUB_TITLE = "Доступ к группе"
 SUB_DESCRIPTION = "Подписка на 30 дней"
-SUB_PRICE = 10000 # *0.01
+SUB_PRICE = 10000  # *0.01
 AI_MODEL = "accessbot_model"
-
 
 
 ############################
@@ -51,15 +60,15 @@ AI_MODEL = "accessbot_model"
 ############################
 async def ai_prompt(dataset: list[dict]):
     if getenv("LOCAL") == "1":
-    	url = "http://localhost:11434/api/chat"
+        url = "http://localhost:11434/api/chat"
     else:
         url = "http://ollama:11434/api/chat"
 
     payload = {
-        "model": AI_MODEL,  
+        "model": AI_MODEL,
         "messages": dataset,
         "stream": False,
-        "max_new_tokens": 2048
+        "max_new_tokens": 2048,
     }
 
     async with aiohttp.ClientSession() as session:
@@ -68,31 +77,33 @@ async def ai_prompt(dataset: list[dict]):
             return data.get("message", {}).get("content", "")
 
 
-
 #####################
 ## BOT INTERACTION ##
 #####################
 @dp.message(Command(commands=["start"]))
 async def on_start(message: Message):
-    thinking_msg = await message.answer("🤔 ИИ думает...\n(подождите пожалуйста ему не хватает видеокарты)\n\n/help")
-    ai_response = await ai_prompt([{"role": "user", "content": f"Поприветствуй меня и предложи свою помощь"}])
+    thinking_msg = await message.answer(
+        "🤔 ИИ думает...\n(подождите пожалуйста ему не хватает видеокарты)\n\n/help"
+    )
+    ai_response = await ai_prompt(
+        [{"role": "user", "content": f"Поприветствуй меня и предложи свою помощь"}]
+    )
     await thinking_msg.edit_text(ai_response)
 
 
-@dp.message(F.text & ~F.text.startswith('/'))
+@dp.message(F.text & ~F.text.startswith("/"))
 async def on_message(message: Message):
     collection = mongo_db[str(message.from_user.id)]
-    await collection.insert_one({"role":"user", "content": message.text})
+    await collection.insert_one({"role": "user", "content": message.text})
 
     cursor = collection.find()
     current_dataset = []
     async for doc in cursor:
-        current_dataset.append({
-            "role": doc["role"],
-            "content": doc["content"]
-        })
+        current_dataset.append({"role": doc["role"], "content": doc["content"]})
 
-    thinking_msg = await message.answer("🤔 ИИ думает...\n(подождите пожалуйста ему не хватает видеокарты)\n\n/help")
+    thinking_msg = await message.answer(
+        "🤔 ИИ думает...\n(подождите пожалуйста ему не хватает видеокарты)\n\n/help"
+    )
     ai_response = await ai_prompt(current_dataset)
     await collection.insert_one({"role": "assistant", "content": ai_response})
     await thinking_msg.edit_text(ai_response)
@@ -111,7 +122,7 @@ async def show_commands(message: Message):
                 KeyboardButton(text="/help"),
             ],
         ],
-        resize_keyboard=True
+        resize_keyboard=True,
     )
 
     text = (
@@ -132,7 +143,9 @@ async def show_commands(message: Message):
 async def get_chat_id(message: Message):
     chat_id = message.chat.id
     chat_type = message.chat.type
-    await message.reply(f"💬 ID чата: `{chat_id}`\n📦 Тип: `{chat_type}`", parse_mode="Markdown")
+    await message.reply(
+        f"💬 ID чата: `{chat_id}`\n📦 Тип: `{chat_type}`", parse_mode="Markdown"
+    )
 
 
 @dp.message(Command(commands=["my_subscription"]))
@@ -152,7 +165,7 @@ async def show_user_info(message: Message) -> None:
                 "Если хотите продлить на месяц - можете еще раз воспользоваться командой /payment 💸\n"
                 "И получить 10 дней в подарок ! 🧠"
             ),
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
     else:
         try:
@@ -169,7 +182,7 @@ async def show_user_info(message: Message) -> None:
                 "Впишите команду /приобрести для оплаты. 💸\n"
                 "После успешной оплаты вы получите одноразовую ссылку на группу. ✅"
             ),
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
 
 
@@ -186,15 +199,21 @@ async def successful_payment(message: Message):
         if user:
             if user.sub_expire_date >= date.today():
                 expire_date = user.sub_expire_date + timedelta(days=40)
-                query = update(User).where(User.user_id == user_id).values(sub_expire_date=expire_date, first_name=first_name)
+                query = (
+                    update(User)
+                    .where(User.user_id == user_id)
+                    .values(sub_expire_date=expire_date, first_name=first_name)
+                )
 
                 text = (
-                        f"✅ Подписка продлена до {expire_date}!\n"
-                        f"Благодарим за то что остаетесь с нами !"
-                    )
+                    f"✅ Подписка продлена до {expire_date}!\n"
+                    f"Благодарим за то что остаетесь с нами !"
+                )
             else:
                 expire_date = date.today() + timedelta(days=30)
-                query = update(User).values(sub_expire_date=expire_date, first_name=first_name)
+                query = update(User).values(
+                    sub_expire_date=expire_date, first_name=first_name
+                )
 
                 text = (
                     f"✅ Подписка офрмлена до {expire_date}!\n"
@@ -202,12 +221,11 @@ async def successful_payment(message: Message):
                 )
         else:
             expire_date = date.today() + timedelta(days=30)
-            query = insert(User).values(user_id=user_id,sub_expire_date=expire_date, first_name=first_name)
-
-            text = (
-                f"✅ Подписка офрмлена до {expire_date}!\n"
-                f"Добро пожаловать !"
+            query = insert(User).values(
+                user_id=user_id, sub_expire_date=expire_date, first_name=first_name
             )
+
+            text = f"✅ Подписка офрмлена до {expire_date}!\n" f"Добро пожаловать !"
 
         try:
             await session.execute(query)
@@ -215,21 +233,25 @@ async def successful_payment(message: Message):
 
             try:
                 invite_link: ChatInviteLink = await bot.create_chat_invite_link(
-                                chat_id=GROUP_ID,
-                                member_limit=1,
-                                expire_date=timedelta(days=30),
-                                creates_join_request=False,
-                                name=f"Для @{message.from_user.first_name}"
+                    chat_id=GROUP_ID,
+                    member_limit=1,
+                    expire_date=timedelta(days=30),
+                    creates_join_request=False,
+                    name=f"Для @{message.from_user.first_name}",
                 )
-                await message.reply(f"Ваша персональная ссылка (действует пока активна подписка):\n{invite_link.invite_link}")
+                await message.reply(
+                    f"Ваша персональная ссылка (действует пока активна подписка):\n{invite_link.invite_link}"
+                )
             except Exception as e:
-                    await message.reply(f"Ошибка при создании ссылки: {e}")
+                await message.reply(f"Ошибка при создании ссылки: {e}")
 
             await message.answer(text)
 
         except Exception as e:
             await session.rollback()
-            await message.answer("⚠️ Произошла ошибка при сохранении в базу данных или платеже.")
+            await message.answer(
+                "⚠️ Произошла ошибка при сохранении в базу данных или платеже."
+            )
             print(f"DB error: {e}")
 
 
@@ -240,9 +262,7 @@ async def pre_checkout(pre_checkout_query: PreCheckoutQuery):
 
 @dp.message(Command(commands=["payment"]))
 async def sub_payment_test(message: Message):
-    prices = [
-        LabeledPrice(label="Подписка на 30 дней", amount=SUB_PRICE)
-    ]
+    prices = [LabeledPrice(label="Подписка на 30 дней", amount=SUB_PRICE)]
 
     payload = f"{message.from_user.id}:{message.from_user.username}"
     await message.answer_invoice(
@@ -252,15 +272,13 @@ async def sub_payment_test(message: Message):
         currency="USD",
         prices=prices,
         start_parameter="subscription-start",
-        payload=payload
+        payload=payload,
     )
 
 
 @dp.message(Command(commands=["credit_card"]))
 async def display_card_info(message: Message):
-    await message.answer("4548819407777774\n" \
-                        "12/26\n123")
-
+    await message.answer("4548819407777774\n" "12/26\n123")
 
 
 ################
@@ -268,44 +286,55 @@ async def display_card_info(message: Message):
 ################
 async def notify_expired_members() -> None:
     async with async_ps_session() as session:
-        query = await session.execute(select(User).where(User.sub_expire_date > date.today()))
+        query = await session.execute(
+            select(User).where(User.sub_expire_date > date.today())
+        )
         users = query.scalars().all()
 
         for user in users:
             expire_days = user.sub_expire_date - date.today()
 
             if expire_days.days == 5:
-                text_message = (f"Здравствуйте, {user.first_name} 👋\n"
-                                "До окончания вашей подписки осталось 5 дней. ⏱️\n"
-                                "Желаете продлить?\n"
-                                "/payment")
+                text_message = (
+                    f"Здравствуйте, {user.first_name} 👋\n"
+                    "До окончания вашей подписки осталось 5 дней. ⏱️\n"
+                    "Желаете продлить?\n"
+                    "/payment"
+                )
                 await bot.send_message(user.user_id, text_message)
 
             if expire_days.days == 1:
-                text_message = (f"Здравствуйте, {user.first_name} 👋\n"
-                                "Ваша подписка заканчивается уже завтра. ❗\n"
-                                "Желаете продлить?\n"
-                                "/payment")
+                text_message = (
+                    f"Здравствуйте, {user.first_name} 👋\n"
+                    "Ваша подписка заканчивается уже завтра. ❗\n"
+                    "Желаете продлить?\n"
+                    "/payment"
+                )
                 await bot.send_message(user.user_id, text_message)
-
 
 
 async def delete_expired_members() -> None:
     async with async_ps_session() as session:
-        query = await session.execute(select(User).where(User.sub_expire_date < date.today()))
+        query = await session.execute(
+            select(User).where(User.sub_expire_date < date.today())
+        )
         users = query.scalars().all()
 
         for user in users:
             member = await bot.get_chat_member(chat_id=GROUP_ID, user_id=user.user_id)
             if not member.status == "creator":
                 await bot.ban_chat_member(chat_id=GROUP_ID, user_id=user.user_id)
-                await bot.send_message(user.user_id, f"Вы были исключены из {GROUP_NAME}.", parse_mode="Markdown")
+                await bot.send_message(
+                    user.user_id,
+                    f"Вы были исключены из {GROUP_NAME}.",
+                    parse_mode="Markdown",
+                )
 
 
 async def trim_all_collections():
-    max_documents=10000
+    max_documents = 10000
     collections = await mongo_db.list_collection_names()
-    
+
     for name in collections:
         collection = mongo_db[name]
         count = await collection.count_documents({})
@@ -316,7 +345,6 @@ async def trim_all_collections():
             ids = [doc["_id"] async for doc in cursor]
             await collection.delete_many({"_id": {"$in": ids}})
             logging.info(f"Trimmed {to_delete} old docs from collection: {name}")
-
 
 
 #####################
@@ -335,9 +363,15 @@ async def main() -> None:
     await trim_all_collections()
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(delete_expired_members, "cron", hour=0, minute=0, timezone="Europe/Moscow")
-    scheduler.add_job(notify_expired_members, "cron", hour=0, minute=0, timezone="Europe/Moscow")
-    scheduler.add_job(trim_all_collections, "cron", hour=0, minute=0, timezone="Europe/Moscow")
+    scheduler.add_job(
+        delete_expired_members, "cron", hour=0, minute=0, timezone="Europe/Moscow"
+    )
+    scheduler.add_job(
+        notify_expired_members, "cron", hour=0, minute=0, timezone="Europe/Moscow"
+    )
+    scheduler.add_job(
+        trim_all_collections, "cron", hour=0, minute=0, timezone="Europe/Moscow"
+    )
     scheduler.start()
 
     await dp.start_polling(bot)
@@ -347,6 +381,6 @@ if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format=f"{Fore.GREEN}%(asctime)s{Style.RESET_ALL} | {Fore.BLUE}%(levelname)s{Style.RESET_ALL} | {Fore.YELLOW}%(name)s{Style.RESET_ALL} | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
     asyncio.run(main())
