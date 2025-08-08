@@ -16,7 +16,7 @@ jobs:
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: 34.172.18.169
+          host: ${{ secrets.VPS_HOST }}
           username: actions
           key: ${{ secrets.ID_RSA }}
           script: |
